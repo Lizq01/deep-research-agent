@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# 虚拟环境
+.venv/
+venv/
+
+# 环境变量（千万不要提交你的 Key！）
+.env
+
+# IDE
+.idea/
+.vscode/
+
+# 运行产物
+outputs/*
+!outputs/.gitkeep
