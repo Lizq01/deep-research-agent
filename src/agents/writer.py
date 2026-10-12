@@ -17,7 +17,7 @@ _PROMPT = """请基于下面的检索资料，围绕调研主题写一份 Markdo
 {evidence}"""
 
 
-def write_report(topic: str, evidence: list[dict]) -> str:
+def write_report(topic: str, evidence: list[dict], feedback: str = "") -> str:
     if evidence:
         evidence_text = "\n\n".join(
             f"[{i}] {e['title']}\nURL: {e['url']}\n内容: {e['content']}"
@@ -26,8 +26,12 @@ def write_report(topic: str, evidence: list[dict]) -> str:
     else:
         evidence_text = "（本次没有检索到任何资料，请如实说明情况，不要编造内容。）"
 
-    return chat(
-        _PROMPT.format(topic=topic, evidence=evidence_text),
-        system=_SYSTEM,
-        temperature=0.4,
-    )
+    prompt = _PROMPT.format(topic=topic, evidence=evidence_text)
+    if feedback:
+        # M2 回退修订：Reviewer / 人工给出的修改意见逐条落实
+        prompt += (
+            "\n\n重要：这是对上一稿的修订。请针对以下评审意见逐条修改，"
+            "未提及的部分按原要求重新组织即可：\n" + feedback
+        )
+
+    return chat(prompt, system=_SYSTEM, temperature=0.4)

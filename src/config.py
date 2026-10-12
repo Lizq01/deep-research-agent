@@ -20,4 +20,10 @@ MAX_QUERIES = int(os.getenv("MAX_QUERIES", "4"))
 MAX_PAGES = int(os.getenv("MAX_PAGES", "8"))
 PAGE_MAX_CHARS = int(os.getenv("PAGE_MAX_CHARS", "6000"))
 
+# ===== M2 多智能体 =====
+PAGES_PER_QUERY = int(os.getenv("PAGES_PER_QUERY", "2"))  # 每个并行 Researcher 抓几页正文
+MAX_REVISIONS = int(os.getenv("MAX_REVISIONS", "2"))      # Writer↔Reviewer 回退修订上限（C5 有界自主）
+LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "60"))       # 单次 LLM 调用超时（秒）
+LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "2"))  # LLM 调用失败重试次数
+
 OUTPUT_DIR = ROOT_DIR / "outputs"
