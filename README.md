@@ -102,7 +102,7 @@ flowchart TD
   human -->|n 放弃| END
 ```
 
-**设计要点（面试可讲）：**
+**设计要点：**
 
 - **四种模式组合**：Chaining（主链路）+ Parallelization（`Send` 动态并行检索）+ Evaluator-Optimizer（Writer↔Reviewer 回退修订）+ 人工介入（`interrupt`）
 - **有界自主**：回退修订上限 `MAX_REVISIONS=2`（.env 可配），超限强制转人工；图执行 `recursion_limit=50` 兜底
