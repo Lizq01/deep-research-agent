@@ -12,3 +12,7 @@ langgraph>=0.2
 langchain-core>=0.3
 fastapi>=0.115
 uvicorn>=0.30
+
+# ===== M3 RAG（本地向量检索）=====
+sentence-transformers>=3.0
+numpy>=1.26

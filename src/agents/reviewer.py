@@ -1,6 +1,6 @@
 """Reviewer：对简报做结构化质量评审，输出 JSON 结论（passed/score/issues/feedback）。
 
-设计要点（面试可讲）：
+设计要点：
 - 评审标准是 5 维 rubric，避免"感觉不够好"式的模糊反馈——
   Evaluator-Optimizer 模式要求评估者给出**具体可执行**的修改意见；
 - passed 有硬判定线（score >= 8 且无幻觉问题），不交给模型自由发挥；

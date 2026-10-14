@@ -5,6 +5,7 @@
 """
 from datetime import datetime
 
+from src import tracing
 from src.agents.planner import make_plan
 from src.agents.researcher import gather_evidence
 from src.agents.writer import write_report
@@ -14,16 +15,21 @@ from src.config import MAX_QUERIES, OUTPUT_DIR
 def run(topic: str, log=print) -> str:
     """执行一次完整调研，返回生成的报告文件路径。"""
     log(f"[1/3] Planner 拆解主题：{topic}")
-    queries = make_plan(topic, n=MAX_QUERIES)
+    with tracing.span("planner") as s:
+        queries = make_plan(topic, n=MAX_QUERIES)
+        s.set("queries", queries)
     for i, q in enumerate(queries, 1):
         log(f"      {i}. {q}")
 
     log("[2/3] Researcher 检索并抓取资料 ...")
     evidence = gather_evidence(queries)
     log(f"      共收集 {len(evidence)} 条资料")
+    if t := tracing.current():
+        t.add_event("node", "research", {"hits": len(evidence)})
 
     log("[3/3] Writer 生成简报 ...")
-    report = write_report(topic, evidence)
+    with tracing.span("writer", {"evidence": len(evidence)}):
+        report = write_report(topic, evidence)
 
     OUTPUT_DIR.mkdir(exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")

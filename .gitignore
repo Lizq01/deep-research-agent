@@ -17,3 +17,9 @@ venv/
 # 运行产物
 outputs/*
 !outputs/.gitkeep
+
+# 本地嵌入模型（体积大，各自下载，不入库）
+bge-small-zh-v1.5/
+
+# RAG 索引缓存（每次运行重建，无需入库）
+.cache/

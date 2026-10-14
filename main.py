@@ -5,6 +5,9 @@
     python main.py --yes "调研主题"  # 同上，人工审核自动通过（非交互 / 脚本用）
     python main.py --m1 "调研主题"   # M1：顺序流程（对照用）
     python main.py --check           # 检查运行环境（依赖 / 配置）
+    python main.py --eval [N]        # 评测：跑 N 条主题（默认 5），产出质量报告
+    python main.py --eval --all      # 评测：跑全量 20 条
+    python main.py --eval --compare  # 评测：同题加跑 M1 对照
 
 示例：
     python main.py "2026 年 AI Agent 行业发展现状"
@@ -42,7 +45,7 @@ def check_env(connectivity: bool = True) -> bool:
         ok = False
 
     console.print("[bold]1) 依赖检查[/bold]")
-    for mod in ["openai", "dotenv", "httpx", "bs4", "rich", "tavily", "ddgs", "langgraph"]:
+    for mod in ["openai", "dotenv", "httpx", "bs4", "rich", "tavily", "ddgs", "langgraph", "numpy", "sentence_transformers"]:
         try:
             __import__(mod)
             console.print(f"   [green]OK[/green]    {mod}")
@@ -98,10 +101,32 @@ def check_env(connectivity: bool = True) -> bool:
     return ok
 
 
+def _print_trace_summary(summary: dict | None) -> None:
+    """运行结束时打印可观测摘要（LLM 用量 / 耗时 / trace 文件位置）。"""
+    if not summary:
+        return
+    llm = summary.get("llm", {})
+    console.print(
+        f"\n[dim]本次运行：耗时 {summary.get('duration_s', '?')}s"
+        f" · LLM 调用 {llm.get('calls', 0)} 次"
+        f"（输入 {llm.get('prompt_tokens', 0)} / 输出 {llm.get('completion_tokens', 0)} token"
+        f"，重试 {llm.get('retries', 0)} 次）"
+        f" · trace：{summary.get('_trace_file', '未落盘')}[/dim]"
+    )
+
+
 def run_m1(topic: str) -> str:
+    from src import tracing
     from src.pipeline import run
 
-    return run(topic, log=lambda msg: console.print(msg))
+    tracing.start_run(topic, "m1")
+    try:
+        path = run(topic, log=lambda msg: console.print(msg))
+        _print_trace_summary(tracing.finish("ok", {"final_path": path}))
+    except Exception:
+        tracing.finish("error")
+        raise
+    return path
 
 
 def run_m2(topic: str, auto_approve: bool = False) -> str | None:
@@ -109,6 +134,28 @@ def run_m2(topic: str, auto_approve: bool = False) -> str | None:
 
     auto_approve=True 时跳过人工闸门（非交互环境 / 脚本），审核结论仍会打印。
     """
+    from langgraph.types import Command
+
+    from src import tracing
+    from src.graph import build_graph
+
+    tracing.start_run(topic, "m2")
+    try:
+        result = _invoke_m2(topic, auto_approve)
+    except Exception:
+        tracing.finish("error")
+        raise
+
+    if result.get("aborted"):
+        console.print("\n[yellow]已放弃，报告未保存。[/yellow]")
+        _print_trace_summary(tracing.finish("aborted"))
+        return None
+    _print_trace_summary(tracing.finish("ok", {"final_path": result.get("final_path")}))
+    return result.get("final_path")
+
+
+def _invoke_m2(topic: str, auto_approve: bool) -> dict:
+    """M2 图的完整执行（含 interrupt 交互循环），返回最终 state。"""
     from langgraph.types import Command
 
     from src.graph import build_graph
@@ -140,10 +187,7 @@ def run_m2(topic: str, auto_approve: bool = False) -> str | None:
 
         result = graph.invoke(Command(resume=resume), config=config)
 
-    if result.get("aborted"):
-        console.print("\n[yellow]已放弃，报告未保存。[/yellow]")
-        return None
-    return result.get("final_path")
+    return result
 
 
 def _ask_decision() -> dict:
@@ -193,17 +237,47 @@ def main() -> None:
 
     auto_approve = False
     use_m1 = False
+    eval_mode = False
+    eval_all = False
+    eval_compare = False
     while args and args[0].startswith("--"):
         flag = args[0]
         if flag in {"--yes", "-y"}:
             auto_approve = True
         elif flag == "--m1":
             use_m1 = True
+        elif flag == "--eval":
+            eval_mode = True
+        elif flag == "--eval-all":
+            eval_mode = True
+            eval_all = True
+        elif flag == "--compare":
+            eval_compare = True
         else:
             console.print(f"[red]未知参数：{flag}[/red]")
             console.print(__doc__)
             return
         args = args[1:]
+
+    if eval_mode:
+        n = 5
+        if args and args[0].isdigit():
+            n = int(args[0])
+            args = args[1:]
+        if args:
+            console.print(f"[red]评测模式不支持额外参数：{' '.join(args)}[/red]")
+            return
+        from src.evals.runner import run_eval
+
+        try:
+            md_path, _ = run_eval(
+                n=n, all_=eval_all, compare=eval_compare, log=console.print
+            )
+            console.print(f"\n[bold green]评测报告：{md_path}[/bold green]")
+        except Exception:
+            console.print("[red]评测运行失败，完整错误如下：[/red]")
+            traceback.print_exc()
+        return
 
     if not args:
         console.print("[red]请提供调研主题，例如：python main.py \"2026 年 AI Agent 行业现状\"[/red]")

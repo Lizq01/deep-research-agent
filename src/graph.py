@@ -1,8 +1,10 @@
 """M2 主流程：LangGraph 多智能体编排。
 
-图结构（面试叙事：Chaining + Parallelization + Evaluator-Optimizer + 人工介入）：
+图结构（Chaining + Parallelization + Evaluator-Optimizer + RAG + 人工介入）：
 
     planner ──Send ×N──> researcher ×N（每个子问题一个，并行）──> aggregator
+                                                                    │
+                                                              retriever（切块+向量索引）
                                                                     │
                                               ┌── 带反馈修订 <──── writer
                                               │                     │
@@ -29,6 +31,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, Send, interrupt
 from rich.console import Console
 
+from src import tracing
 from src.agents.planner import make_plan
 from src.agents.reviewer import review_report
 from src.agents.writer import write_report
@@ -39,6 +42,7 @@ from src.config import (
     OUTPUT_DIR,
     PAGES_PER_QUERY,
 )
+from src.rag.retriever import build_index, retrieve_context
 from src.tools import fetch_page, web_search
 
 _console = Console()
@@ -63,7 +67,9 @@ class ResearchState(TypedDict, total=False):
     queries: list[str]
     # 并行 Researcher 用 operator.add 归并各自的检索结果
     raw_evidence: Annotated[list[Evidence], operator.add]
-    evidence: list[Evidence]  # aggregator 去重截断后的最终证据
+    evidence: list[Evidence]  # aggregator 去重截断后的证据（也是 RAG 的索引来源）
+    rag_evidence: list[Evidence]  # RAG 召回后的证据（Writer 实际使用）
+    rag_stats: dict
     report: str
     feedback: str  # Reviewer / 人工给 Writer 的修改意见
     review: dict
@@ -76,16 +82,18 @@ class ResearchState(TypedDict, total=False):
 
 
 def planner_node(state: ResearchState) -> dict:
-    _log(f"[1/5] Planner 拆解主题：{state['topic']}")
-    queries = make_plan(state["topic"], n=MAX_QUERIES)
-    for i, q in enumerate(queries, 1):
-        _log(f"      {i}. {q}")
+    with tracing.span("planner") as s:
+        _log(f"[1/6] Planner 拆解主题：{state['topic']}")
+        queries = make_plan(state["topic"], n=MAX_QUERIES)
+        for i, q in enumerate(queries, 1):
+            _log(f"      {i}. {q}")
+        s.set("queries", queries)
     return {"queries": queries}
 
 
 def fan_out_to_researchers(state: ResearchState) -> list[Send]:
     """动态并行：每个子问题派发一个独立 Researcher。"""
-    _log(f"[2/5] Researcher ×{len(state['queries'])} 并行检索 ...")
+    _log(f"[2/6] Researcher ×{len(state['queries'])} 并行检索 ...")
     return [Send("researcher", {"query": q}) for q in state["queries"]]
 
 
@@ -102,36 +110,64 @@ def researcher_node(payload: dict) -> dict:
             {"title": r["title"], "url": url, "content": content, "query": query}
         )
     _log(f"      · {query} → {len(items)} 条")
+    if t := tracing.current():
+        # Send 并行分支：只记录结果事件，耗时已隐含在整体运行时长里
+        t.add_event("node", "researcher", {"query": query, "hits": len(items)})
     return {"raw_evidence": items}
 
 
 def aggregator_node(state: ResearchState) -> dict:
     """跨分支归并：按 URL 去重 + 按 MAX_PAGES 截断。"""
-    seen: set[str] = set()
-    evidence: list[Evidence] = []
-    for e in state.get("raw_evidence", []):
-        if e["url"] not in seen:
-            seen.add(e["url"])
-            evidence.append(e)
-    evidence = evidence[:MAX_PAGES]
-    _log(f"[3/5] Aggregator 归并：去重后 {len(evidence)} 条资料")
+    with tracing.span("aggregator") as s:
+        seen: set[str] = set()
+        evidence: list[Evidence] = []
+        for e in state.get("raw_evidence", []):
+            if e["url"] not in seen:
+                seen.add(e["url"])
+                evidence.append(e)
+        evidence = evidence[:MAX_PAGES]
+        s.set("evidence", len(evidence))
+        s.set("raw", len(state.get("raw_evidence", [])))
+    _log(f"[3/6] Aggregator 归并：去重后 {len(evidence)} 条资料")
     return {"evidence": evidence}
+
+
+def retriever_node(state: ResearchState) -> dict:
+    """RAG 检索：切块建索引 → 按子问题召回相关片段。
+
+    降级契约：索引不可用（模型缺失 / 关闭 RAG）时返回全量资料，流程不中断。
+    """
+    with tracing.span("retriever") as s:
+        docs = state.get("evidence", [])
+        _log("[4/6] Retriever 建索引并按子问题召回 ...")
+        store = build_index(docs, log=_log)
+        evidence, stats = retrieve_context(
+            store, state.get("queries", []), docs, log=_log
+        )
+        s.set("rag_stats", stats)
+    return {"rag_evidence": evidence, "rag_stats": stats}
 
 
 def writer_node(state: ResearchState) -> dict:
     revision = state.get("revision_count", 0)
     feedback = state.get("feedback", "")
     tag = "撰写初稿" if revision == 0 else f"第 {revision} 次修订"
-    _log(f"[4/5] Writer {tag} ...")
-    report = write_report(state["topic"], state.get("evidence", []), feedback=feedback)
+    _log(f"[5/6] Writer {tag} ...")
+    # 优先用 RAG 召回结果；RAG 不可用时回退全量证据（降级路径）
+    evidence = state.get("rag_evidence") or state.get("evidence", [])
+    with tracing.span("writer", {"revision": revision, "evidence": len(evidence)}):
+        report = write_report(state["topic"], evidence, feedback=feedback)
     return {"report": report, "revision_count": revision + 1}
 
 
 def reviewer_node(state: ResearchState) -> dict:
-    _log("[5/5] Reviewer 评审 ...")
-    review = review_report(
-        state["topic"], state.get("evidence", []), state["report"]
-    )
+    _log("[6/6] Reviewer 评审 ...")
+    evidence = state.get("rag_evidence") or state.get("evidence", [])
+    with tracing.span("reviewer") as s:
+        review = review_report(state["topic"], evidence, state["report"])
+        s.set("score", review.get("score"))
+        s.set("passed", review.get("passed"))
+        s.set("parse_error", review.get("parse_error", False))
     if review.get("parse_error"):
         _log("      [yellow]评审输出解析失败，按通过处理（已标记）[/yellow]")
     else:
@@ -185,20 +221,35 @@ def save_report_node(state: ResearchState) -> dict:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     path = OUTPUT_DIR / f"report_{stamp}.md"
 
-    evidence = state.get("evidence", [])
+    evidence = state.get("rag_evidence") or state.get("evidence", [])
     sources = "\n".join(
         f"{i}. [{e['title']}]({e['url']})" for i, e in enumerate(evidence, start=1)
     )
     review = state.get("review", {})
+    stats = state.get("rag_stats", {})
+    if stats:
+        rag_line = (
+            f" | RAG: {stats.get('mode', '-')} / {stats.get('chunks', 0)} 片段"
+            f" / 命中 {stats.get('hits', 0)} 条"
+            f" / 上下文 {stats.get('input_chars', 0)}→{stats.get('output_chars', 0)} 字符"
+        )
+    else:
+        rag_line = ""
     meta = (
-        f"<!-- M2 | 评审得分: {review.get('score', 'N/A')}/10"
-        f" | 修订次数: {state.get('revision_count', 0) - 1} -->\n\n"
+        f"<!-- 评审得分: {review.get('score', 'N/A')}/10"
+        f" | 修订次数: {state.get('revision_count', 0) - 1}{rag_line} -->\n\n"
     )
     content = (
         f"# 调研简报：{state['topic']}\n\n{meta}{state['report']}"
         f"\n\n---\n\n## 参考来源\n\n{sources}\n"
     )
     path.write_text(content, encoding="utf-8")
+    if t := tracing.current():
+        t.add_event(
+            "node",
+            "save_report",
+            {"path": str(path), "rag_stats": stats, "review_score": review.get("score")},
+        )
     _log(f"      报告已保存：{path}")
     return {"final_path": str(path)}
 
@@ -212,6 +263,7 @@ def build_graph():
     g.add_node("planner", planner_node)
     g.add_node("researcher", researcher_node)
     g.add_node("aggregator", aggregator_node)
+    g.add_node("retriever", retriever_node)
     g.add_node("writer", writer_node)
     g.add_node("reviewer", reviewer_node)
     g.add_node("human_review", human_review_node)
@@ -220,7 +272,8 @@ def build_graph():
     g.add_edge(START, "planner")
     g.add_conditional_edges("planner", fan_out_to_researchers, ["researcher"])
     g.add_edge("researcher", "aggregator")
-    g.add_edge("aggregator", "writer")
+    g.add_edge("aggregator", "retriever")
+    g.add_edge("retriever", "writer")
     g.add_edge("writer", "reviewer")
     g.add_conditional_edges("reviewer", route_after_review, ["writer", "human_review"])
     g.add_edge("save_report", END)

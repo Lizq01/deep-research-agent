@@ -26,4 +26,30 @@ MAX_REVISIONS = int(os.getenv("MAX_REVISIONS", "2"))      # Writer↔Reviewer �
 LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "60"))       # 单次 LLM 调用超时（秒）
 LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "2"))  # LLM 调用失败重试次数
 
+# ===== M3 RAG =====
+# 本地嵌入模型目录（相对项目根目录，或填绝对路径）
+EMBEDDING_MODEL_PATH = (
+    os.getenv("EMBEDDING_MODEL_PATH", "bge-small-zh-v1.5").strip() or "bge-small-zh-v1.5"
+)
+RAG_ENABLED = os.getenv("RAG_ENABLED", "true").strip().lower() in {"1", "true", "yes"}
+CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "500"))       # 分块目标字符数
+CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "80"))  # 相邻块重叠字符数
+RAG_TOP_K = int(os.getenv("RAG_TOP_K", "8"))           # 每个查询召回的段落数
+RAG_MIN_SCORE = float(os.getenv("RAG_MIN_SCORE", "0.35"))  # 相似度下限，低于此值不召回
+
+# ===== M3 可观测 =====
+TRACE_ENABLED = os.getenv("TRACE_ENABLED", "true").strip().lower() in {"1", "true", "yes"}
+# Langfuse 上报（可选）：两个 key 都配置后才启用；未配置时只写本地 trace 文件
+LANGFUSE_PUBLIC_KEY = os.getenv("LANGFUSE_PUBLIC_KEY", "").strip()
+LANGFUSE_SECRET_KEY = os.getenv("LANGFUSE_SECRET_KEY", "").strip()
+LANGFUSE_HOST = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com").strip()
+
 OUTPUT_DIR = ROOT_DIR / "outputs"
+TRACE_DIR = OUTPUT_DIR / "traces"
+EVAL_DATASET = ROOT_DIR / "evals" / "dataset.json"
+
+
+def resolve_embedding_model_path() -> Path:
+    """把 EMBEDDING_MODEL_PATH 解析为绝对路径（相对路径按项目根目录解析）。"""
+    p = Path(EMBEDDING_MODEL_PATH)
+    return p if p.is_absolute() else (ROOT_DIR / p)
