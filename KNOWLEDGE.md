@@ -25,7 +25,7 @@
 ### 1. StateGraph：图即状态机
 - **是什么**：LangGraph 把 Agent 流程建模为有向图，节点是函数，边是控制流，**状态（State）在节点间流动并被逐步改写**。
 - **为什么**：相比线性调用，图能表达循环（回退修订）、分支（条件路由）、并行（Send），且每一步可检查点。
-- **代码**：`src/graph.py` → `StateGraph(ResearchState)`，8 个节点。
+- **代码**：`src/services/graph.py` → `StateGraph(ResearchState)`，8 个节点。
 
 ### 2. 状态与 Reducer（Annotated + operator.add）
 - **是什么**：节点返回的 dict 默认是"覆盖式"更新；用 `Annotated[list, operator.add]` 标记的字段是"追加式"归并。
@@ -73,19 +73,19 @@
 - **是什么**：把长文档切成检索单元。
 - **本项目策略**：段落感知切分（句末标点优先），500 字/块 + 80 字相邻重叠。
 - **为什么**：固定长度硬切会把一个完整论断拦腰砍断；重叠保留跨块上下文，防止"答案正好在切块边界上"时召回残缺。
-- **代码**：`src/rag/chunking.py`（含无标点超长文本的硬切兜底）。
+- **代码**：`src/modules/chunking.py`（含无标点超长文本的硬切兜底）。
 
 ### 3. 嵌入（Embedding）
 - **是什么**：把文本映射为稠密向量，语义相近 → 向量相近。
 - **选型**：本地 `bge-small-zh-v1.5`（512 维，92MB，纯离线）。
 - **为什么本地**：DeepSeek 没有 embedding 接口；本地模型零调用成本、无网络依赖、中文效果好。
 - **非对称检索（关键细节）**：BGE 官方要求**查询侧加指令前缀**（"为这个句子生成表示以用于检索相关文章："），文档侧不加——查询和文档不在同一向量子空间，混用会显著降低召回质量。
-- **代码**：`src/rag/embedder.py` → `embed_query()` vs `embed_texts()`。
+- **代码**：`src/modules/embedder.py` → `embed_query()` vs `embed_texts()`。
 
 ### 4. 向量检索
 - **归一化技巧**：向量 L2 归一化后，**余弦相似度 = 点积**，检索从 O(n·dim) 的三角运算降为一次矩阵乘法 `vectors @ query`。
 - **阈值过滤**：`RAG_MIN_SCORE=0.35`，低于此值的片段宁可不召回（宁缺毋滥，避免噪声进 prompt）。
-- **代码**：`src/rag/vectorstore.py` → `_search_vector()`。
+- **代码**：`src/modules/vectorstore.py` → `_search_vector()`。
 
 ### 5. 降级链（Graceful Degradation，本项目的招牌设计）
 ```
@@ -104,7 +104,7 @@ BM25 关键词检索（纯标准库实现）
 
 ### 7. 证据聚合
 - 同一 URL 命中多个片段 → 合并为一条证据（保留最高分），避免 Writer 看到重复来源、引用编号打架。
-- **代码**：`src/rag/retriever.py` → `retrieve_context()` 按 URL 聚合。
+- **代码**：`src/services/retriever.py` → `retrieve_context()` 按 URL 聚合。
 
 ---
 

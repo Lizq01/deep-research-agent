@@ -1,0 +1,256 @@
+{
+  "aggregate": {
+    "n_total": 5,
+    "n_ok": 5,
+    "judge_overall": 8.2,
+    "dim_coverage": 8.8,
+    "dim_grounding": 8.2,
+    "dim_structure": 9.2,
+    "dim_insight": 7.8,
+    "citation_validity": 1.0,
+    "source_coverage": 0.9,
+    "mean_evidence": 7.4,
+    "mean_report_chars": 3799.6,
+    "mean_revisions": 0.4,
+    "mean_duration_s": 37.5,
+    "mean_tokens": 15264.0,
+    "llm_retries_total": 0,
+    "rag_compression": 0.72,
+    "parse_errors": 0
+  },
+  "results": [
+    {
+      "id": "t01",
+      "topic": "2026 年 LangGraph 与主流 Agent 编排框架的对比",
+      "status": "ok",
+      "report_path": "C:\\Users\\Administrator\\Desktop\\deep-research-agent\\outputs\\report_20261014_144657.md",
+      "report_chars": 3991,
+      "n_evidence": 7,
+      "review_score": 9,
+      "revisions": 0,
+      "rag": {
+        "mode": "embedding",
+        "chunks": 127,
+        "hits": 7,
+        "input_chars": 48000,
+        "output_chars": 12152,
+        "compression": 0.75
+      },
+      "runtime": {
+        "duration_s": 37.5,
+        "llm_calls": 3,
+        "total_tokens": 7900,
+        "llm_retries": 0
+      },
+      "citations_total": 53,
+      "citations_valid": 53,
+      "citations_invalid": 0,
+      "cited_sources": 7,
+      "source_coverage": 1.0,
+      "judge": {
+        "scores": {
+          "coverage": 9,
+          "grounding": 8,
+          "structure": 9,
+          "insight": 8
+        },
+        "overall": 8,
+        "missing_aspects": [
+          "各框架性能基准（延迟/吞吐）实测对比",
+          "定价与许可成本的系统对比",
+          "Mastra 等新兴框架的深入对比",
+          "具体行业垂直场景（金融/医疗）适配性细分"
+        ],
+        "hallucination_risk": "low",
+        "comment": "要点覆盖完整、结构规范、论断均有来源支撑，且给出混合模式与治理层缺位等增量结论，仅性能基准与成本对比等次要维度缺失。",
+        "parse_error": false
+      },
+      "trace": "C:\\Users\\Administrator\\Desktop\\deep-research-agent\\outputs\\traces\\run_20261014_144620_dad4b0.json"
+    },
+    {
+      "id": "t02",
+      "topic": "大模型上下文窗口扩展技术的发展现状",
+      "status": "ok",
+      "report_path": "C:\\Users\\Administrator\\Desktop\\deep-research-agent\\outputs\\report_20261014_144731.md",
+      "report_chars": 3940,
+      "n_evidence": 8,
+      "review_score": 9,
+      "revisions": 0,
+      "rag": {
+        "mode": "embedding",
+        "chunks": 98,
+        "hits": 8,
+        "input_chars": 36749,
+        "output_chars": 10726,
+        "compression": 0.71
+      },
+      "runtime": {
+        "duration_s": 31.7,
+        "llm_calls": 3,
+        "total_tokens": 11244,
+        "llm_retries": 0
+      },
+      "citations_total": 48,
+      "citations_valid": 48,
+      "citations_invalid": 0,
+      "cited_sources": 7,
+      "source_coverage": 0.88,
+      "judge": {
+        "scores": {
+          "coverage": 8,
+          "grounding": 8,
+          "structure": 9,
+          "insight": 8
+        },
+        "overall": 8,
+        "missing_aspects": [
+          "长上下文评测基准的系统梳理（如RULER、LongBench、大海捞针等基准的对比与适用性）",
+          "KV缓存优化、稀疏/滑窗注意力等工程实现的具体方案与性能数据",
+          "长上下文模型在具体行业场景的部署案例与效果评估"
+        ],
+        "hallucination_risk": "low",
+        "comment": "简报结构完整、要点覆盖较全且论断均有证据支撑，对'窗口大不等于用得好'的洞察到位，主要短板是评测基准未系统展开、工程实现细节偏薄。",
+        "parse_error": false
+      },
+      "trace": "C:\\Users\\Administrator\\Desktop\\deep-research-agent\\outputs\\traces\\run_20261014_144659_9b8e9f.json"
+    },
+    {
+      "id": "t03",
+      "topic": "RAG 与长上下文两种技术路线的取舍",
+      "status": "ok",
+      "report_path": "C:\\Users\\Administrator\\Desktop\\deep-research-agent\\outputs\\report_20261014_144801.md",
+      "report_chars": 3598,
+      "n_evidence": 8,
+      "review_score": 9,
+      "revisions": 0,
+      "rag": {
+        "mode": "embedding",
+        "chunks": 129,
+        "hits": 8,
+        "input_chars": 47838,
+        "output_chars": 13872,
+        "compression": 0.71
+      },
+      "runtime": {
+        "duration_s": 28.3,
+        "llm_calls": 3,
+        "total_tokens": 12811,
+        "llm_retries": 0
+      },
+      "citations_total": 53,
+      "citations_valid": 53,
+      "citations_invalid": 0,
+      "cited_sources": 6,
+      "source_coverage": 0.75,
+      "judge": {
+        "scores": {
+          "coverage": 9,
+          "grounding": 9,
+          "structure": 10,
+          "insight": 9
+        },
+        "overall": 9,
+        "missing_aspects": [
+          "两条路线各自优势中，RAG 侧的优势（如可扩展至超大规模语料、低成本更新知识库、检索精度可调优）着墨相对偏少，更多是从长上下文缺陷反推"
+        ],
+        "hallucination_risk": "low",
+        "comment": "覆盖要点齐全、论断均有证据支撑、结构规范且具备综合决策框架，是一份高质量的调研简报。",
+        "parse_error": false
+      },
+      "trace": "C:\\Users\\Administrator\\Desktop\\deep-research-agent\\outputs\\traces\\run_20261014_144733_3b9a68.json"
+    },
+    {
+      "id": "t04",
+      "topic": "开源向量数据库的现状与选型",
+      "status": "ok",
+      "report_path": "C:\\Users\\Administrator\\Desktop\\deep-research-agent\\outputs\\report_20261014_144827.md",
+      "report_chars": 3304,
+      "n_evidence": 7,
+      "review_score": 9,
+      "revisions": 0,
+      "rag": {
+        "mode": "embedding",
+        "chunks": 80,
+        "hits": 7,
+        "input_chars": 29136,
+        "output_chars": 8682,
+        "compression": 0.7
+      },
+      "runtime": {
+        "duration_s": 24.4,
+        "llm_calls": 3,
+        "total_tokens": 9420,
+        "llm_retries": 0
+      },
+      "citations_total": 37,
+      "citations_valid": 37,
+      "citations_invalid": 0,
+      "cited_sources": 6,
+      "source_coverage": 0.86,
+      "judge": {
+        "scores": {
+          "coverage": 9,
+          "grounding": 8,
+          "structure": 9,
+          "insight": 7
+        },
+        "overall": 8,
+        "missing_aspects": [
+          "具体基准测试数值（QPS/延迟/召回率横向实测）",
+          "国产开源向量库及商业托管方案的详细对比",
+          "企业级特性（数据一致性、安全合规、多租户隔离）的深入讨论"
+        ],
+        "hallucination_risk": "low",
+        "comment": "要点覆盖完整、结构规范、论断基本有据，但性能部分多为定性描述、缺乏实测数据，增量洞察有限。",
+        "parse_error": false
+      },
+      "trace": "C:\\Users\\Administrator\\Desktop\\deep-research-agent\\outputs\\traces\\run_20261014_144803_d850d4.json"
+    },
+    {
+      "id": "t05",
+      "topic": "MCP（Model Context Protocol）生态发展现状",
+      "status": "ok",
+      "report_path": "C:\\Users\\Administrator\\Desktop\\deep-research-agent\\outputs\\report_20261014_144934.md",
+      "report_chars": 4165,
+      "n_evidence": 7,
+      "review_score": 9,
+      "revisions": 2,
+      "rag": {
+        "mode": "embedding",
+        "chunks": 105,
+        "hits": 7,
+        "input_chars": 40449,
+        "output_chars": 10486,
+        "compression": 0.74
+      },
+      "runtime": {
+        "duration_s": 65.6,
+        "llm_calls": 7,
+        "total_tokens": 34945,
+        "llm_retries": 0
+      },
+      "citations_total": 66,
+      "citations_valid": 66,
+      "citations_invalid": 0,
+      "cited_sources": 7,
+      "source_coverage": 1.0,
+      "judge": {
+        "scores": {
+          "coverage": 9,
+          "grounding": 8,
+          "structure": 9,
+          "insight": 7
+        },
+        "overall": 8,
+        "missing_aspects": [
+          "与 Function Call 的关系（要点清单明确要求，但简报仅在背景部分提及 MCP 与 LangChain 传统模式的差异，未系统厘清 MCP 与 Function Calling 的概念边界与协作关系）"
+        ],
+        "hallucination_risk": "low",
+        "comment": "结构规范、证据引用扎实，覆盖了 MCP 要解决的问题、厂商支持、生态风险与治理挑战，但遗漏了要点清单中明确要求的'与 Function Call 的关系'，且分析多为资料归纳、增量结论有限。",
+        "parse_error": false
+      },
+      "trace": "C:\\Users\\Administrator\\Desktop\\deep-research-agent\\outputs\\traces\\run_20261014_144829_b9a2ac.json"
+    }
+  ],
+  "m1_results": []
+}

@@ -2,20 +2,25 @@
 
 图结构（Chaining + Parallelization + Evaluator-Optimizer + RAG + 人工介入）：
 
-    planner ──Send ×N──> researcher ×N（每个子问题一个，并行）──> aggregator
-                                                                    │
-                                                              retriever（切块+向量索引）
-                                                                    │
-                                              ┌── 带反馈修订 <──── writer
-                                              │                     │
-                                              │                   reviewer（结构化评审）
-                                              │                     │
-                                              │     不通过且修订数 ≤ MAX_REVISIONS
-                                              └─────────────────────┤
-                                                                    │ 通过 / 达上限
-                                                                human_review（interrupt 挂起）
-                                                                    │ y 通过 / 修改意见 / n 放弃
-                                                                save_report ──> END
+    planner ──Send ×N──> researcher ×N（每个子问题一个，并行）──┐
+       │                                                      ├──> aggregator
+       └──────────────> knowledge（MCP 内部知识库，并行）──────┘
+                                                                   │
+                                                             retriever（切块+向量索引）
+                                                                   │
+                                             ┌── 带反馈修订 <──── writer
+                                             │                     │
+                                             │                   reviewer（结构化评审）
+                                             │                     │
+                                             │     不通过且修订数 ≤ MAX_REVISIONS
+                                             └─────────────────────┤
+                                                                   │ 通过 / 达上限
+                                                               human_review（interrupt 挂起）
+                                                                   │ y 通过 / 修改意见 / n 放弃
+                                                               save_report ──> END
+
+两路检索并行：researcher 走公网网页，knowledge 走 MCP 服务的本地知识库。
+后者失败只降级为「这一路没有证据」，不影响主链路。
 
 有界自主（C5）：
 - Writer↔Reviewer 回退修订上限 MAX_REVISIONS（默认 2），超限强制转人工；
@@ -29,12 +34,12 @@ from typing import Annotated, Literal, TypedDict
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, Send, interrupt
-from rich.console import Console
 
-from src import tracing
-from src.agents.planner import make_plan
-from src.agents.reviewer import review_report
-from src.agents.writer import write_report
+from src.modules import tracing
+from src.modules.agents.knowledge import knowledge_node
+from src.modules.agents.planner import make_plan
+from src.modules.agents.reviewer import review_report
+from src.modules.agents.writer import write_report
 from src.config import (
     MAX_PAGES,
     MAX_QUERIES,
@@ -42,11 +47,9 @@ from src.config import (
     OUTPUT_DIR,
     PAGES_PER_QUERY,
 )
-from src.rag.retriever import build_index, retrieve_context
-from src.tools import fetch_page, web_search
-
-_console = Console()
-
+from src.services.retriever import build_index, retrieve_context
+from src.modules.tools import fetch_page, web_search
+from src.utils.console import console as _console
 
 def _log(msg: str) -> None:
     _console.print(msg)
@@ -67,6 +70,8 @@ class ResearchState(TypedDict, total=False):
     queries: list[str]
     # 并行 Researcher 用 operator.add 归并各自的检索结果
     raw_evidence: Annotated[list[Evidence], operator.add]
+    kb_evidence: list[Evidence]  # MCP 内部知识库命中（与网页证据同构）
+    mcp_stats: dict
     evidence: list[Evidence]  # aggregator 去重截断后的证据（也是 RAG 的索引来源）
     rag_evidence: list[Evidence]  # RAG 召回后的证据（Writer 实际使用）
     rag_stats: dict
@@ -117,18 +122,27 @@ def researcher_node(payload: dict) -> dict:
 
 
 def aggregator_node(state: ResearchState) -> dict:
-    """跨分支归并：按 URL 去重 + 按 MAX_PAGES 截断。"""
+    """跨分支归并：内部知识库片段优先保留，网页证据按 URL 去重后按 MAX_PAGES 截断。
+
+    MCP 片段不占用外部抓页预算：MAX_PAGES 约束的是抓取成本（网络 + 正文解析），
+    内部片段是本地索引命中，没有这部分成本；混在同一个池子里只会让内部资料挤掉外部信源。
+    """
     with tracing.span("aggregator") as s:
         seen: set[str] = set()
-        evidence: list[Evidence] = []
+        web: list[Evidence] = []
         for e in state.get("raw_evidence", []):
             if e["url"] not in seen:
                 seen.add(e["url"])
-                evidence.append(e)
-        evidence = evidence[:MAX_PAGES]
+                web.append(e)
+        kb = [e for e in state.get("kb_evidence", []) if e["url"] not in seen]
+        evidence = kb + web[:MAX_PAGES]
         s.set("evidence", len(evidence))
         s.set("raw", len(state.get("raw_evidence", [])))
-    _log(f"[3/6] Aggregator 归并：去重后 {len(evidence)} 条资料")
+        s.set("kb", len(kb))
+    _log(
+        f"[3/6] Aggregator 归并：内部 {len(kb)} 条 + 外部 {min(len(web), MAX_PAGES)} 条"
+        f"（外部去重前 {len(state.get('raw_evidence', []))} 条）"
+    )
     return {"evidence": evidence}
 
 
@@ -222,9 +236,15 @@ def save_report_node(state: ResearchState) -> dict:
     path = OUTPUT_DIR / f"report_{stamp}.md"
 
     evidence = state.get("rag_evidence") or state.get("evidence", [])
+    external = [e for e in evidence if not e["url"].startswith("mcp://")]
+    internal = [e for e in evidence if e["url"].startswith("mcp://")]
     sources = "\n".join(
-        f"{i}. [{e['title']}]({e['url']})" for i, e in enumerate(evidence, start=1)
+        f"{i}. [{e['title']}]({e['url']})" for i, e in enumerate(external, start=1)
     )
+    if internal:
+        sources += "\n\n### 内部知识库\n\n" + "\n".join(
+            f"- {e['title']}" for e in internal
+        )
     review = state.get("review", {})
     stats = state.get("rag_stats", {})
     if stats:
@@ -235,9 +255,15 @@ def save_report_node(state: ResearchState) -> dict:
         )
     else:
         rag_line = ""
+    mcp = state.get("mcp_stats", {})
+    if mcp:
+        mcp_line = f" | MCP: {mcp.get('status', '-')} / 调用 {mcp.get('calls', 0)} 次" \
+                   f" / 命中 {mcp.get('hits', 0)} 条"
+    else:
+        mcp_line = ""
     meta = (
         f"<!-- 评审得分: {review.get('score', 'N/A')}/10"
-        f" | 修订次数: {state.get('revision_count', 0) - 1}{rag_line} -->\n\n"
+        f" | 修订次数: {state.get('revision_count', 0) - 1}{rag_line}{mcp_line} -->\n\n"
     )
     content = (
         f"# 调研简报：{state['topic']}\n\n{meta}{state['report']}"
@@ -262,6 +288,7 @@ def build_graph():
 
     g.add_node("planner", planner_node)
     g.add_node("researcher", researcher_node)
+    g.add_node("knowledge", knowledge_node)
     g.add_node("aggregator", aggregator_node)
     g.add_node("retriever", retriever_node)
     g.add_node("writer", writer_node)
@@ -270,8 +297,11 @@ def build_graph():
     g.add_node("save_report", save_report_node)
 
     g.add_edge(START, "planner")
+    # planner 之后分两路并行：公网网页（Send 扇出）与内部知识库（MCP）
     g.add_conditional_edges("planner", fan_out_to_researchers, ["researcher"])
+    g.add_edge("planner", "knowledge")
     g.add_edge("researcher", "aggregator")
+    g.add_edge("knowledge", "aggregator")
     g.add_edge("aggregator", "retriever")
     g.add_edge("retriever", "writer")
     g.add_edge("writer", "reviewer")

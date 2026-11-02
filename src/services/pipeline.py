@@ -5,10 +5,10 @@
 """
 from datetime import datetime
 
-from src import tracing
-from src.agents.planner import make_plan
-from src.agents.researcher import gather_evidence
-from src.agents.writer import write_report
+from src.modules import tracing
+from src.modules.agents.planner import make_plan
+from src.modules.agents.researcher import gather_evidence
+from src.modules.agents.writer import write_report
 from src.config import MAX_QUERIES, OUTPUT_DIR
 
 

@@ -4,7 +4,7 @@ M2 升级点：这里会改成并行检索（多个 Researcher 同时跑），
 并接入向量库做去重与召回。
 """
 from src.config import MAX_PAGES
-from src.tools import fetch_page, web_search
+from src.modules.tools import fetch_page, web_search
 
 
 def gather_evidence(queries: list[str], max_pages: int = MAX_PAGES) -> list[dict]:

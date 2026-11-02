@@ -7,7 +7,7 @@ import time
 
 from openai import OpenAI
 
-from src import tracing
+from src.modules import tracing
 from src.config import (
     LLM_MAX_RETRIES,
     LLM_TIMEOUT,

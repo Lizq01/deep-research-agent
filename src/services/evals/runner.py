@@ -11,14 +11,22 @@
 """
 import json
 import re
+import shutil
 from datetime import datetime
 from pathlib import Path
 
-from src import tracing
-from src.config import EVAL_DATASET, OUTPUT_DIR
-from src.evals.judge import judge_report
+from src.modules import tracing
+from src.config import (
+    BASELINE_DIR,
+    BASELINE_FILE,
+    EVAL_DATASET,
+    OUTPUT_DIR,
+)
+from src.services.evals.judge import judge_report
 
+# 独立引用 [1]，以及"成串堆砌" [1][2][3]（后者无法定位到具体论断）
 _CITE_RE = re.compile(r"\[(\d+)\]")
+_CLUSTER_RE = re.compile(r"(?:\s*\[\d+\]){2,}")
 
 
 # ===== 数据集 =====
@@ -44,15 +52,28 @@ def pick_topics(n: int | None = None, all_: bool = False) -> list[dict]:
 
 
 def citation_metrics(report: str, n_evidence: int) -> dict:
-    """引用编号有效性：[n] 必须落在 1~n_evidence 内（不耗 LLM，可复现）。"""
+    """引用编号有效性：[n] 必须落在 1~n_evidence 内（不耗 LLM，可复现）。
+
+    另计"单引用率"：成串堆砌（[1][2][3]）无法定位到具体论断，
+    引用有效率 100% 并不等于可追溯，这个指标用来防止指标被堆砌刷满。
+    """
     cites = [int(m) for m in _CITE_RE.findall(report)]
     valid = [c for c in cites if 1 <= c <= n_evidence] if n_evidence else []
+
+    clusters = _CLUSTER_RE.findall(report)
+    n_in_cluster = sum(len(_CITE_RE.findall(c)) for c in clusters)
+    single_ratio = (
+        round(1 - n_in_cluster / len(cites), 2) if cites else None
+    )
+
     return {
         "citations_total": len(cites),
         "citations_valid": len(valid),
         "citations_invalid": len(cites) - len(valid),
         "cited_sources": len(set(valid)),
         "source_coverage": round(len(set(valid)) / n_evidence, 2) if n_evidence else 0.0,
+        "citation_clusters": len(clusters),
+        "single_cite_ratio": single_ratio,
     }
 
 
@@ -74,7 +95,7 @@ def _run_m2_once(topic: str, log=print) -> dict:
     """跑一次 M2 图（评测模式：人工闸门自动通过），返回最终 state。"""
     from langgraph.types import Command
 
-    from src.graph import build_graph
+    from src.services.graph import build_graph
 
     graph = build_graph()
     thread_id = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
@@ -145,7 +166,7 @@ def eval_one_m2(item: dict, log=print) -> dict:
 
 def eval_one_m1(item: dict, log=print) -> dict:
     """对单条主题跑 M1 顺序流程（对照用，无 RAG / 无评审环）。"""
-    from src.pipeline import run as run_m1_pipeline
+    from src.services.pipeline import run as run_m1_pipeline
 
     topic = item["topic"]
     log(f"▶ [M1·{item['id']}] {topic}")
@@ -211,6 +232,7 @@ def aggregate(results: list[dict]) -> dict:
                 if r.get("citations_total")
             ]
         ),
+        "single_cite_ratio": _mean([r.get("single_cite_ratio") for r in ok]),
         "source_coverage": _mean([r.get("source_coverage") for r in ok]),
         "mean_evidence": _mean([r.get("n_evidence") for r in ok]),
         "mean_report_chars": _mean([r.get("report_chars") for r in ok]),
@@ -233,8 +255,82 @@ def _fmt(v) -> str:
     return str(v)
 
 
+# ===== 基线（回归对比）=====
+
+_BASELINE_KEYS = [
+    ("judge_overall", "Judge 总分", 10),
+    ("dim_coverage", "覆盖度", 10),
+    ("dim_grounding", "忠实度", 10),
+    ("dim_structure", "结构", 10),
+    ("dim_insight", "洞察", 10),
+    ("citation_validity", "引用有效率", 1),
+    ("single_cite_ratio", "单引用率", 1),
+    ("mean_evidence", "平均证据数", None),
+    ("mean_report_chars", "平均报告长度", None),
+    ("rag_compression", "RAG 压缩", 1),
+    ("mean_duration_s", "平均耗时 s", None),
+    ("mean_tokens", "平均 token", None),
+]
+
+
+def load_baseline() -> dict | None:
+    """读取基线（evals/baselines/baseline.json，入库文件）。"""
+    if not BASELINE_FILE.exists():
+        return None
+    try:
+        return json.loads(BASELINE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def save_baseline(json_path: str) -> str:
+    """把本次结果设为新基线，同时在 history/ 留一份带时间戳的副本。"""
+    BASELINE_DIR.mkdir(parents=True, exist_ok=True)
+    (BASELINE_DIR / "history").mkdir(exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    shutil.copyfile(json_path, BASELINE_FILE)
+    history = BASELINE_DIR / "history" / f"baseline_{stamp}.json"
+    shutil.copyfile(json_path, history)
+    return str(BASELINE_FILE)
+
+
+def _delta_line(label: str, base, cur) -> str:
+    if base is None or cur is None:
+        return f"| {label} | {_fmt(base)} | {_fmt(cur)} | - |"
+    diff = cur - base
+    if abs(diff) < 1e-9:
+        mark = "持平"
+    elif diff > 0:
+        mark = f"↑ +{round(diff, 2)}"
+    else:
+        mark = f"↓ {round(diff, 2)}"
+    return f"| {label} | {_fmt(base)} | {_fmt(cur)} | {mark} |"
+
+
+def _baseline_section(base: dict | None, agg: dict) -> list[str]:
+    if not base:
+        return []
+    b_agg = base.get("aggregate", {})
+    return [
+        "",
+        "## 与基线对比（回归检查）",
+        "",
+        f"- 基线文件：`evals/baselines/baseline.json`"
+        f"（样本 {b_agg.get('n_ok', '?')} 条 / 本次 {agg['n_ok']} 条）",
+        "",
+        "| 指标 | 基线 | 本次 | 变化 |",
+        "|---|---|---|---|",
+    ] + [
+        _delta_line(label, b_agg.get(key), agg.get(key))
+        for key, label, _ in _BASELINE_KEYS
+    ]
+
+
 def write_report(
-    results: list[dict], agg: dict, m1_results: list[dict] | None = None
+    results: list[dict],
+    agg: dict,
+    m1_results: list[dict] | None = None,
+    base: dict | None = None,
 ) -> tuple[str, str]:
     """写 eval_report_*.md 与 eval_results_*.json，返回两个路径。"""
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -261,6 +357,7 @@ def write_report(
         f"| 结构 structure | {_fmt(agg['dim_structure'])}/10 | |",
         f"| 洞察 insight | {_fmt(agg['dim_insight'])}/10 | |",
         f"| 引用有效率 | {_fmt(agg['citation_validity'])} | [编号] 落在证据范围内比例（确定性指标） |",
+        f"| 单引用率 | {_fmt(agg['single_cite_ratio'])} | 非成串引用占比（防堆砌刷分，确定性指标） |",
         f"| 证据引用覆盖 | {_fmt(agg['source_coverage'])} | 被引用过的证据占比 |",
         f"| 平均证据数 | {_fmt(agg['mean_evidence'])} 条 | |",
         f"| 平均报告长度 | {_fmt(agg['mean_report_chars'])} 字符 | |",
@@ -272,8 +369,8 @@ def write_report(
         "",
         "## 分主题明细",
         "",
-        "| # | 主题 | Judge | 覆盖 | 忠实 | 结构 | 洞察 | 引用有效率 | 证据 | RAG压缩 | 耗时s |",
-        "|---|---|---|---|---|---|---|---|---|---|---|",
+        "| # | 主题 | Judge | 覆盖 | 忠实 | 结构 | 洞察 | 引用有效率 | 单引用率 | 证据 | RAG压缩 | 耗时s |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in results:
         j = r.get("judge", {})
@@ -281,7 +378,7 @@ def write_report(
         rag = r.get("rag", {})
         if r.get("status") != "ok":
             lines.append(
-                f"| {r['id']} | {r['topic'][:24]} | 失败 | - | - | - | - | - | - | - | - |"
+                f"| {r['id']} | {r['topic'][:24]} | 失败 | - | - | - | - | - | - | - | - | - |"
             )
             continue
         lines.append(
@@ -289,6 +386,7 @@ def write_report(
             f"{_fmt(s.get('coverage'))} | {_fmt(s.get('grounding'))} | "
             f"{_fmt(s.get('structure'))} | {_fmt(s.get('insight'))} | "
             f"{_fmt(r['citations_valid'] / r['citations_total']) if r['citations_total'] else '-'} | "
+            f"{_fmt(r.get('single_cite_ratio'))} | "
             f"{r['n_evidence']} | {_fmt(rag.get('compression'))} | "
             f"{_fmt(r['runtime']['duration_s'])} |"
         )
@@ -326,6 +424,8 @@ def write_report(
             "> 不可直接对比，表中已省略。",
         ]
 
+    lines += _baseline_section(base, agg)
+
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     json_path.write_text(
         json.dumps(
@@ -343,9 +443,13 @@ def run_eval(
     n: int | None = 5,
     all_: bool = False,
     compare: bool = False,
+    set_baseline: bool = False,
     log=print,
 ) -> tuple[str, str]:
-    """入口：跑评测并产出报告。返回 (report_md, results_json) 路径。"""
+    """入口：跑评测并产出报告。返回 (report_md, results_json) 路径。
+
+    set_baseline=True 时把本次结果设为新基线（旧基线自动进 history/）。
+    """
     topics = pick_topics(n=n, all_=all_)
     log(f"评测样本：{len(topics)} 条主题")
 
@@ -356,6 +460,25 @@ def run_eval(
         m1_results = [eval_one_m1(item, log=log) for item in topics]
 
     agg = aggregate(results)
-    md_path, json_path = write_report(results, agg, m1_results)
+    base = load_baseline()
+    md_path, json_path = write_report(results, agg, m1_results, base)
+
+    if base:
+        log("\n=== 与基线对比 ===")
+        for key, label, _ in _BASELINE_KEYS:
+            b = base.get("aggregate", {}).get(key)
+            c = agg.get(key)
+            if b is None or c is None:
+                continue
+            diff = c - b
+            mark = "持平" if abs(diff) < 1e-9 else (
+                f"↑ +{round(diff, 2)}" if diff > 0 else f"↓ {round(diff, 2)}"
+            )
+            log(f"    {label}：{_fmt(b)} → {_fmt(c)}  {mark}")
+
+    if set_baseline:
+        path = save_baseline(json_path)
+        log(f"\n已设为新基线：{path}")
+
     log(f"\n评测完成：{md_path}\n明细数据：{json_path}")
     return md_path, json_path

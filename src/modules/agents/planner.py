@@ -1,5 +1,5 @@
 """Planner：把调研主题拆解成若干检索子问题。"""
-from src.llm import chat
+from src.modules.llm import chat
 from src.utils import extract_json_list
 
 _SYSTEM = "你是一个严谨的调研规划助手，擅长把一个调研主题拆解成若干互补的检索子问题。"

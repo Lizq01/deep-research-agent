@@ -16,3 +16,8 @@ uvicorn>=0.30
 # ===== M3 RAG（本地向量检索）=====
 sentence-transformers>=3.0
 numpy>=1.26
+
+# ===== M4 MCP 工具层 =====
+# mcp 2.x：FastMCP 已并入 mcp.server.mcpserver；1.x 的 mcp.server.fastmcp 会直接抛错
+# 本端只用 Client（stdio），服务端在 ../rag-knowledge-chat 里跑
+mcp>=2.0

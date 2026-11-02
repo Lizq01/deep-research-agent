@@ -51,7 +51,7 @@ class VectorStore:
         try:
             import numpy as np
 
-            from src.rag.embedder import embed_texts
+            from src.modules.embedder import embed_texts
 
             vectors = embed_texts([c["text"] for c in self.chunks])
             self._vectors = np.asarray(vectors, dtype="float32")
@@ -77,7 +77,7 @@ class VectorStore:
     def _search_vector(self, query: str, top_k: int) -> list[dict]:
         import numpy as np
 
-        from src.rag.embedder import embed_query
+        from src.modules.embedder import embed_query
 
         try:
             q = np.asarray(embed_query(query), dtype="float32")

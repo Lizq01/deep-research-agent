@@ -5,7 +5,7 @@
 - Judge 在环外，只打分不改稿，维度面向评测结论（覆盖度 / 忠实度 / 结构 / 洞察），
   且拿着评测集预置的"应覆盖要点清单"逐项核对——这是 Reviewer 没有的信息。
 """
-from src.llm import chat
+from src.modules.llm import chat
 from src.utils import extract_json_object
 
 _SYSTEM = "你是独立的质量评审员，只输出 JSON，不输出任何其他文字。"
@@ -25,7 +25,8 @@ _PROMPT = """请评审下面这份调研简报。
 评分维度（每项 0~10 分）：
 1. coverage 覆盖度：要点清单逐项核对，覆盖越全分越高；同时关注是否跑题
 2. grounding 忠实度：关键论断是否有证据支撑，是否存在编造（幻觉）
-3. structure 结构：一句话结论、摘要、分析小节、来源引用是否齐备规范
+3. structure 结构：一句话结论、摘要、分析小节是否齐备；引用是否一句一引
+   （段末成串堆砌 [1][2][3] 要扣分）
 4. insight 洞察：是否有综合分析与增量结论，而非资料堆砌
 
 只输出如下 JSON，不要输出任何其他文字：

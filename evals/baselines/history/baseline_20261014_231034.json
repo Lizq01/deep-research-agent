@@ -1,0 +1,259 @@
+{
+  "aggregate": {
+    "n_total": 5,
+    "n_ok": 5,
+    "judge_overall": 8.0,
+    "dim_coverage": 8.4,
+    "dim_grounding": 8.2,
+    "dim_structure": 9.0,
+    "dim_insight": 8.0,
+    "citation_validity": 1.0,
+    "single_cite_ratio": 0.97,
+    "source_coverage": 0.84,
+    "mean_evidence": 7.4,
+    "mean_report_chars": 3452.8,
+    "mean_revisions": 0.6,
+    "mean_duration_s": 45.56,
+    "mean_tokens": 15786.0,
+    "llm_retries_total": 0,
+    "rag_compression": 0.75,
+    "parse_errors": 0
+  },
+  "results": [
+    {
+      "id": "t01",
+      "topic": "2026 年 LangGraph 与主流 Agent 编排框架的对比",
+      "status": "ok",
+      "report_path": "C:\\Users\\Administrator\\Desktop\\deep-research-agent\\outputs\\report_20261014_230654.md",
+      "report_chars": 3203,
+      "n_evidence": 7,
+      "review_score": 9,
+      "revisions": 1,
+      "rag": {
+        "mode": "embedding",
+        "chunks": 121,
+        "hits": 7,
+        "input_chars": 43061,
+        "output_chars": 6675,
+        "compression": 0.84
+      },
+      "runtime": {
+        "duration_s": 49.4,
+        "llm_calls": 5,
+        "total_tokens": 12560,
+        "llm_retries": 0
+      },
+      "citations_total": 38,
+      "citations_valid": 38,
+      "citations_invalid": 0,
+      "cited_sources": 7,
+      "source_coverage": 1.0,
+      "citation_clusters": 1,
+      "single_cite_ratio": 0.92,
+      "judge": {
+        "scores": {
+          "coverage": 9,
+          "grounding": 8,
+          "structure": 9,
+          "insight": 8
+        },
+        "overall": 8,
+        "missing_aspects": [
+          "状态管理与检查点能力未作为独立小节展开（仅在能力边界小节中顺带提及检查点、时间旅行调试）",
+          "各框架核心机制差异对 CrewAI、OpenAI Agents SDK、AG2 的机制描述较薄，主要停留在定位标签层面"
+        ],
+        "hallucination_risk": "low",
+        "comment": "覆盖度与结构俱佳，论断基本有据且主动标注局限，但状态/检查点能力未独立成节、部分框架机制差异偏标签化，洞察多为合理归纳而非强增量。",
+        "parse_error": false
+      },
+      "trace": "C:\\Users\\Administrator\\Desktop\\deep-research-agent\\outputs\\traces\\run_20261014_230605_07efe9.json"
+    },
+    {
+      "id": "t02",
+      "topic": "大模型上下文窗口扩展技术的发展现状",
+      "status": "ok",
+      "report_path": "C:\\Users\\Administrator\\Desktop\\deep-research-agent\\outputs\\report_20261014_230740.md",
+      "report_chars": 3528,
+      "n_evidence": 7,
+      "review_score": 9,
+      "revisions": 1,
+      "rag": {
+        "mode": "embedding",
+        "chunks": 107,
+        "hits": 7,
+        "input_chars": 38672,
+        "output_chars": 10882,
+        "compression": 0.72
+      },
+      "runtime": {
+        "duration_s": 44.2,
+        "llm_calls": 5,
+        "total_tokens": 22621,
+        "llm_retries": 0
+      },
+      "citations_total": 46,
+      "citations_valid": 46,
+      "citations_invalid": 0,
+      "cited_sources": 5,
+      "source_coverage": 0.71,
+      "citation_clusters": 0,
+      "single_cite_ratio": 1.0,
+      "judge": {
+        "scores": {
+          "coverage": 7,
+          "grounding": 8,
+          "structure": 9,
+          "insight": 8
+        },
+        "overall": 8,
+        "missing_aspects": [
+          "位置编码/RoPE 类技术演进（仅以'位置编码优化'一笔带过，未展开 RoPE 演进脉络）",
+          "长上下文评测基准（仅提及 LongHalQA 一个多模态幻觉基准，缺少通用长上下文基准如 RULER、LongBench、Needle-in-a-Haystack 等）",
+          "长上下文代表模型与参数规模（列出模型名称与窗口长度，但未给出参数规模）"
+        ],
+        "hallucination_risk": "low",
+        "comment": "结构完整、论证有据、洞察到位，但位置编码演进、评测基准与模型参数规模三项要点覆盖偏薄，属'深度够而广度略欠'的高质量简报。",
+        "parse_error": false
+      },
+      "trace": "C:\\Users\\Administrator\\Desktop\\deep-research-agent\\outputs\\traces\\run_20261014_230656_f683b8.json"
+    },
+    {
+      "id": "t03",
+      "topic": "RAG 与长上下文两种技术路线的取舍",
+      "status": "ok",
+      "report_path": "C:\\Users\\Administrator\\Desktop\\deep-research-agent\\outputs\\report_20261014_230810.md",
+      "report_chars": 2997,
+      "n_evidence": 8,
+      "review_score": 9,
+      "revisions": 0,
+      "rag": {
+        "mode": "embedding",
+        "chunks": 115,
+        "hits": 8,
+        "input_chars": 40061,
+        "output_chars": 10662,
+        "compression": 0.73
+      },
+      "runtime": {
+        "duration_s": 27.8,
+        "llm_calls": 3,
+        "total_tokens": 10668,
+        "llm_retries": 0
+      },
+      "citations_total": 44,
+      "citations_valid": 44,
+      "citations_invalid": 0,
+      "cited_sources": 6,
+      "source_coverage": 0.75,
+      "citation_clusters": 1,
+      "single_cite_ratio": 0.95,
+      "judge": {
+        "scores": {
+          "coverage": 8,
+          "grounding": 9,
+          "structure": 9,
+          "insight": 8
+        },
+        "overall": 8,
+        "missing_aspects": [
+          "知识时效性问题（RAG 知识库实时更新 vs 长上下文静态快照的时效性对比）未作为独立要点展开，仅在协同/规模讨论中隐含提及"
+        ],
+        "hallucination_risk": "low",
+        "comment": "覆盖三条要点且论证扎实、引用规范，唯知识时效性这一设定要点未独立成节，属结构性遗漏而非硬伤。",
+        "parse_error": false
+      },
+      "trace": "C:\\Users\\Administrator\\Desktop\\deep-research-agent\\outputs\\traces\\run_20261014_230742_241cd3.json"
+    },
+    {
+      "id": "t04",
+      "topic": "开源向量数据库的现状与选型",
+      "status": "ok",
+      "report_path": "C:\\Users\\Administrator\\Desktop\\deep-research-agent\\outputs\\report_20261014_230904.md",
+      "report_chars": 3462,
+      "n_evidence": 8,
+      "review_score": 9,
+      "revisions": 1,
+      "rag": {
+        "mode": "embedding",
+        "chunks": 90,
+        "hits": 8,
+        "input_chars": 32477,
+        "output_chars": 10499,
+        "compression": 0.68
+      },
+      "runtime": {
+        "duration_s": 52.8,
+        "llm_calls": 5,
+        "total_tokens": 22134,
+        "llm_retries": 0
+      },
+      "citations_total": 52,
+      "citations_valid": 52,
+      "citations_invalid": 0,
+      "cited_sources": 7,
+      "source_coverage": 0.88,
+      "citation_clusters": 0,
+      "single_cite_ratio": 1.0,
+      "judge": {
+        "scores": {
+          "coverage": 9,
+          "grounding": 8,
+          "structure": 9,
+          "insight": 8
+        },
+        "overall": 8,
+        "missing_aspects": [],
+        "hallucination_risk": "low",
+        "comment": "覆盖全部要点且结构完整、引用规范，但部分数据（如HNSW内存倍数、IVF-PQ内存值）在截断证据中无法直接核实，存在轻微过度具体化风险。",
+        "parse_error": false
+      },
+      "trace": "C:\\Users\\Administrator\\Desktop\\deep-research-agent\\outputs\\traces\\run_20261014_230811_f4f098.json"
+    },
+    {
+      "id": "t05",
+      "topic": "MCP（Model Context Protocol）生态发展现状",
+      "status": "ok",
+      "report_path": "C:\\Users\\Administrator\\Desktop\\deep-research-agent\\outputs\\report_20261014_230959.md",
+      "report_chars": 4074,
+      "n_evidence": 7,
+      "review_score": 9,
+      "revisions": 0,
+      "rag": {
+        "mode": "embedding",
+        "chunks": 114,
+        "hits": 7,
+        "input_chars": 43283,
+        "output_chars": 10319,
+        "compression": 0.76
+      },
+      "runtime": {
+        "duration_s": 53.6,
+        "llm_calls": 3,
+        "total_tokens": 10946,
+        "llm_retries": 0
+      },
+      "citations_total": 53,
+      "citations_valid": 53,
+      "citations_invalid": 0,
+      "cited_sources": 6,
+      "source_coverage": 0.86,
+      "citation_clusters": 0,
+      "single_cite_ratio": 1.0,
+      "judge": {
+        "scores": {
+          "coverage": 9,
+          "grounding": 8,
+          "structure": 9,
+          "insight": 8
+        },
+        "overall": 8,
+        "missing_aspects": [],
+        "hallucination_risk": "low",
+        "comment": "简报结构完整、要点覆盖全面，对MCP与Function Calling关系及生态风险分析到位，但部分论断依赖单一来源且引用方式偶有段末堆砌，洞察深度尚可提升。",
+        "parse_error": false
+      },
+      "trace": "C:\\Users\\Administrator\\Desktop\\deep-research-agent\\outputs\\traces\\run_20261014_230906_f04018.json"
+    }
+  ],
+  "m1_results": []
+}

@@ -4,13 +4,18 @@
     python main.py "调研主题"        # M2：LangGraph 多智能体（默认）
     python main.py --yes "调研主题"  # 同上，人工审核自动通过（非交互 / 脚本用）
     python main.py --m1 "调研主题"   # M1：顺序流程（对照用）
+    python main.py --mcp ["关键词"]  # MCP 自检：连接知识库服务、列工具、调一次
     python main.py --check           # 检查运行环境（依赖 / 配置）
     python main.py --eval [N]        # 评测：跑 N 条主题（默认 5），产出质量报告
     python main.py --eval --all      # 评测：跑全量 20 条
     python main.py --eval --compare  # 评测：同题加跑 M1 对照
+    python main.py --eval --baseline # 评测后把结果设为新基线（旧基线进 history/）
+
+每次评测会自动与 evals/baselines/baseline.json 对比，输出回归变化（升/降/持平）。
 
 示例：
     python main.py "2026 年 AI Agent 行业发展现状"
+    python main.py --mcp "混合检索和重排的区别"
 """
 import sys
 import traceback
@@ -18,6 +23,7 @@ from datetime import datetime
 
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.table import Table
 
 from src.config import MODEL_NAME, OPENAI_API_KEY, OPENAI_BASE_URL, TAVILY_API_KEY
 
@@ -45,7 +51,7 @@ def check_env(connectivity: bool = True) -> bool:
         ok = False
 
     console.print("[bold]1) 依赖检查[/bold]")
-    for mod in ["openai", "dotenv", "httpx", "bs4", "rich", "tavily", "ddgs", "langgraph", "numpy", "sentence_transformers"]:
+    for mod in ["openai", "dotenv", "httpx", "bs4", "rich", "tavily", "ddgs", "langgraph", "numpy", "sentence_transformers", "mcp"]:
         try:
             __import__(mod)
             console.print(f"   [green]OK[/green]    {mod}")
@@ -73,7 +79,7 @@ def check_env(connectivity: bool = True) -> bool:
             console.print("   [yellow]跳过[/yellow]  未配置 OPENAI_API_KEY")
         else:
             try:
-                from src.llm import chat
+                from src.modules.llm import chat
 
                 out = chat("只回复两个字：收到", temperature=0.0)
                 console.print(f"   [green]OK[/green]    LLM 连通（应答：{out[:20]}）")
@@ -82,7 +88,7 @@ def check_env(connectivity: bool = True) -> bool:
                 console.print(f"   [red]失败[/red]  LLM 调用异常：{str(e)[:200]}")
 
         try:
-            from src.tools import web_search
+            from src.modules.tools import web_search
 
             rows = web_search("test", max_results=1)
             if rows:
@@ -116,8 +122,8 @@ def _print_trace_summary(summary: dict | None) -> None:
 
 
 def run_m1(topic: str) -> str:
-    from src import tracing
-    from src.pipeline import run
+    from src.modules import tracing
+    from src.services.pipeline import run
 
     tracing.start_run(topic, "m1")
     try:
@@ -136,8 +142,8 @@ def run_m2(topic: str, auto_approve: bool = False) -> str | None:
     """
     from langgraph.types import Command
 
-    from src import tracing
-    from src.graph import build_graph
+    from src.modules import tracing
+    from src.services.graph import build_graph
 
     tracing.start_run(topic, "m2")
     try:
@@ -145,6 +151,11 @@ def run_m2(topic: str, auto_approve: bool = False) -> str | None:
     except Exception:
         tracing.finish("error")
         raise
+    finally:
+        # 显式关掉 MCP 会话：本次运行结束即释放服务端子进程
+        from src.modules.agents.knowledge import shutdown_client
+
+        shutdown_client()
 
     if result.get("aborted"):
         console.print("\n[yellow]已放弃，报告未保存。[/yellow]")
@@ -158,7 +169,7 @@ def _invoke_m2(topic: str, auto_approve: bool) -> dict:
     """M2 图的完整执行（含 interrupt 交互循环），返回最终 state。"""
     from langgraph.types import Command
 
-    from src.graph import build_graph
+    from src.services.graph import build_graph
 
     graph = build_graph()
     thread_id = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -220,6 +231,72 @@ def _ask_decision() -> dict:
     return {"action": "abort"}
 
 
+def mcp_check(query: str = "") -> None:
+    """MCP 自检：连接 → 动态发现工具 → 调一次检索 → 演示参数校验。
+
+    不调用 LLM、不联网，几秒内出结果，用来确认「工具层」本身是通的。
+    """
+    from src.config import MCP_SERVER_ARGS, MCP_SERVER_CWD, resolve_mcp_server_command
+    from src.modules.agents.knowledge import get_client, shutdown_client
+    from src.modules.mcp_client import MCPClientError, MCPToolError
+
+    query = query.strip() or "混合检索和重排分别解决什么问题"
+    console.print("[bold]MCP 自检[/bold]")
+    console.print(f"   服务端目录：{MCP_SERVER_CWD}")
+    console.print(f"   启动命令：{resolve_mcp_server_command()} {' '.join(MCP_SERVER_ARGS)}\n")
+
+    try:
+        client = get_client()
+    except MCPClientError as exc:
+        console.print(f"[red]连接失败：{exc}[/red]")
+        console.print(
+            "[yellow]排查：确认服务端已 ingest 索引、MCP_SERVER_CWD 指向 "
+            "rag-knowledge-chat，且该目录下有 .venv[/yellow]"
+        )
+        return
+
+    try:
+        info = client.server_info
+        console.print(
+            f"[green]已连接[/green] {info.get('name')} v{info.get('version')}"
+            f"（协议 {info.get('protocol')}）"
+        )
+
+        tools = client.list_tools(refresh=True)
+        table = Table(title=f"tools/list：发现 {len(tools)} 个工具", show_lines=False)
+        table.add_column("工具", style="bold")
+        table.add_column("必填")
+        table.add_column("参数")
+        table.add_column("说明", max_width=52)
+        for tool in tools:
+            desc = (tool.description or "").split("\n")[0]
+            table.add_row(tool.name, ", ".join(tool.required) or "—",
+                          ", ".join(tool.params), desc)
+        console.print(table)
+
+        search = next((t for t in tools if t.name == "search_knowledge"), tools[0])
+        args = {k: v for k, v in {"query": query, "top_k": 3}.items() if k in search.params}
+        console.print(f"\n[bold]调用[/bold] {search.name}({args})")
+        payload = client.call_tool(search.name, args)
+        results = payload.get("results", [])
+        console.print(f"   返回 {len(results)} 条；索引后端 {payload.get('index', {}).get('backend')}")
+        for item in results[:3]:
+            text = (item.get("text") or "").replace("\n", " ")[:60]
+            console.print(
+                f"   - {item.get('chunk_id')}  score={item.get('score')}"
+                f"  {text}…"
+            )
+
+        console.print("\n[bold]参数校验[/bold]（故意传 top_k=999，应被服务端拒绝）")
+        try:
+            client.call_tool(search.name, {**args, "top_k": 999})
+            console.print("   [red]异常：非法参数竟然通过了[/red]")
+        except MCPToolError as exc:
+            console.print(f"   [green]已拒绝[/green] {str(exc)[:160]}")
+    finally:
+        shutdown_client()
+
+
 def main() -> None:
     args = sys.argv[1:]
 
@@ -237,15 +314,19 @@ def main() -> None:
 
     auto_approve = False
     use_m1 = False
+    mcp_mode = False
     eval_mode = False
     eval_all = False
     eval_compare = False
+    eval_baseline = False
     while args and args[0].startswith("--"):
         flag = args[0]
         if flag in {"--yes", "-y"}:
             auto_approve = True
         elif flag == "--m1":
             use_m1 = True
+        elif flag == "--mcp":
+            mcp_mode = True
         elif flag == "--eval":
             eval_mode = True
         elif flag == "--eval-all":
@@ -253,11 +334,18 @@ def main() -> None:
             eval_all = True
         elif flag == "--compare":
             eval_compare = True
+        elif flag == "--baseline":
+            eval_mode = True
+            eval_baseline = True
         else:
             console.print(f"[red]未知参数：{flag}[/red]")
             console.print(__doc__)
             return
         args = args[1:]
+
+    if mcp_mode:
+        mcp_check(" ".join(args))
+        return
 
     if eval_mode:
         n = 5
@@ -267,11 +355,15 @@ def main() -> None:
         if args:
             console.print(f"[red]评测模式不支持额外参数：{' '.join(args)}[/red]")
             return
-        from src.evals.runner import run_eval
+        from src.services.evals.runner import run_eval
 
         try:
             md_path, _ = run_eval(
-                n=n, all_=eval_all, compare=eval_compare, log=console.print
+                n=n,
+                all_=eval_all,
+                compare=eval_compare,
+                set_baseline=eval_baseline,
+                log=console.print,
             )
             console.print(f"\n[bold green]评测报告：{md_path}[/bold green]")
         except Exception:

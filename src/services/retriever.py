@@ -9,8 +9,8 @@
 import logging
 
 from src.config import RAG_ENABLED, RAG_TOP_K
-from src.rag.chunking import chunk_documents
-from src.rag.vectorstore import VectorStore
+from src.modules.chunking import chunk_documents
+from src.modules.vectorstore import VectorStore
 
 logger = logging.getLogger(__name__)
 
